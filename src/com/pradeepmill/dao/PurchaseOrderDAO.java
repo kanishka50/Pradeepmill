@@ -2,6 +2,7 @@ package com.pradeepmill.dao;
 
 import com.pradeepmill.database.DatabaseConnection;
 import com.pradeepmill.models.PurchaseOrder;
+import com.pradeepmill.models.PaymentRecord;
 import java.sql.*;
 import java.util.ArrayList;
 import java.util.List;
@@ -68,7 +69,7 @@ public class PurchaseOrderDAO {
         return false;
     }
     
-    // Update payment information
+    // FIXED: Enhanced payment update with validation
     public boolean updatePayment(int purchaseId, double paidAmount, String paymentStatus) {
         String sql = "UPDATE purchase_orders SET paid_amount=?, payment_status=?, updated_at=CURRENT_TIMESTAMP WHERE purchase_id=?";
         
@@ -79,9 +80,49 @@ public class PurchaseOrderDAO {
             pstmt.setString(2, paymentStatus);
             pstmt.setInt(3, purchaseId);
             
-            return pstmt.executeUpdate() > 0;
+            int rowsUpdated = pstmt.executeUpdate();
+            if (rowsUpdated > 0) {
+                System.out.println("✅ Payment updated successfully for purchase ID: " + purchaseId);
+                return true;
+            } else {
+                System.out.println("❌ No purchase order found with ID: " + purchaseId);
+                return false;
+            }
             
         } catch (SQLException e) {
+            System.out.println("❌ Error updating payment: " + e.getMessage());
+            e.printStackTrace();
+        }
+        return false;
+    }
+    
+    // NEW: Insert payment record for history tracking
+    public boolean insertPaymentRecord(PaymentRecord paymentRecord) {
+        String sql = "INSERT INTO payment_records (purchase_id, payment_amount, payment_method, reference_number, payment_date, notes) VALUES (?, ?, ?, ?, ?, ?)";
+        
+        try (Connection conn = DatabaseConnection.getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
+            
+            pstmt.setInt(1, paymentRecord.getPurchaseId());
+            pstmt.setDouble(2, paymentRecord.getPaymentAmount());
+            pstmt.setString(3, paymentRecord.getPaymentMethod());
+            pstmt.setString(4, paymentRecord.getReferenceNumber());
+            pstmt.setDate(5, new java.sql.Date(paymentRecord.getPaymentDate().getTime()));
+            pstmt.setString(6, paymentRecord.getNotes());
+            
+            int rowsAffected = pstmt.executeUpdate();
+            
+            if (rowsAffected > 0) {
+                ResultSet generatedKeys = pstmt.getGeneratedKeys();
+                if (generatedKeys.next()) {
+                    paymentRecord.setPaymentId(generatedKeys.getInt(1));
+                }
+                System.out.println("✅ Payment record saved for tracking");
+                return true;
+            }
+            
+        } catch (SQLException e) {
+            System.out.println("❌ Error saving payment record: " + e.getMessage());
             e.printStackTrace();
         }
         return false;
@@ -109,59 +150,58 @@ public class PurchaseOrderDAO {
         return null;
     }
     
+    // NEW: Find purchase order by number (needed for payment dialog)
+    public PurchaseOrder findPurchaseOrderByNumber(String purchaseNumber) {
+        String sql = "SELECT po.*, s.supplier_name FROM purchase_orders po " +
+                     "LEFT JOIN suppliers s ON po.supplier_id = s.supplier_id " +
+                     "WHERE po.purchase_number=?";
+        
+        try (Connection conn = DatabaseConnection.getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            
+            pstmt.setString(1, purchaseNumber);
+            ResultSet rs = pstmt.executeQuery();
+            
+            if (rs.next()) {
+                return mapResultSetToPurchaseOrder(rs);
+            }
+            
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+        return null;
+    }
+    
     // Get all purchase orders with supplier names
     public List<PurchaseOrder> getAllPurchaseOrders() {
         String sql = "SELECT po.*, s.supplier_name FROM purchase_orders po " +
                      "LEFT JOIN suppliers s ON po.supplier_id = s.supplier_id " +
                      "ORDER BY po.purchase_date DESC, po.purchase_id DESC";
         
-        List<PurchaseOrder> purchaseOrders = new ArrayList<>();
+        List<PurchaseOrder> orders = new ArrayList<>();
         
         try (Connection conn = DatabaseConnection.getConnection();
              PreparedStatement pstmt = conn.prepareStatement(sql);
              ResultSet rs = pstmt.executeQuery()) {
             
             while (rs.next()) {
-                purchaseOrders.add(mapResultSetToPurchaseOrder(rs));
+                orders.add(mapResultSetToPurchaseOrder(rs));
             }
             
         } catch (SQLException e) {
             e.printStackTrace();
         }
-        return purchaseOrders;
-    }
-    
-    // Get purchase orders by supplier
-    public List<PurchaseOrder> getPurchaseOrdersBySupplier(int supplierId) {
-        String sql = "SELECT po.*, s.supplier_name FROM purchase_orders po " +
-                     "LEFT JOIN suppliers s ON po.supplier_id = s.supplier_id " +
-                     "WHERE po.supplier_id=? ORDER BY po.purchase_date DESC";
-        
-        List<PurchaseOrder> purchaseOrders = new ArrayList<>();
-        
-        try (Connection conn = DatabaseConnection.getConnection();
-             PreparedStatement pstmt = conn.prepareStatement(sql)) {
-            
-            pstmt.setInt(1, supplierId);
-            ResultSet rs = pstmt.executeQuery();
-            
-            while (rs.next()) {
-                purchaseOrders.add(mapResultSetToPurchaseOrder(rs));
-            }
-            
-        } catch (SQLException e) {
-            e.printStackTrace();
-        }
-        return purchaseOrders;
+        return orders;
     }
     
     // Get purchase orders by payment status
     public List<PurchaseOrder> getPurchaseOrdersByPaymentStatus(String paymentStatus) {
         String sql = "SELECT po.*, s.supplier_name FROM purchase_orders po " +
                      "LEFT JOIN suppliers s ON po.supplier_id = s.supplier_id " +
-                     "WHERE po.payment_status=? ORDER BY po.purchase_date DESC";
+                     "WHERE po.payment_status = ? " +
+                     "ORDER BY po.purchase_date DESC";
         
-        List<PurchaseOrder> purchaseOrders = new ArrayList<>();
+        List<PurchaseOrder> orders = new ArrayList<>();
         
         try (Connection conn = DatabaseConnection.getConnection();
              PreparedStatement pstmt = conn.prepareStatement(sql)) {
@@ -170,38 +210,36 @@ public class PurchaseOrderDAO {
             ResultSet rs = pstmt.executeQuery();
             
             while (rs.next()) {
-                purchaseOrders.add(mapResultSetToPurchaseOrder(rs));
+                orders.add(mapResultSetToPurchaseOrder(rs));
             }
             
         } catch (SQLException e) {
             e.printStackTrace();
         }
-        return purchaseOrders;
+        return orders;
     }
     
-    // Get purchase orders by date range
-    public List<PurchaseOrder> getPurchaseOrdersByDateRange(java.util.Date startDate, java.util.Date endDate) {
+    // Get outstanding purchase orders (Pending or Partial payments)
+    public List<PurchaseOrder> getOutstandingPurchases() {
         String sql = "SELECT po.*, s.supplier_name FROM purchase_orders po " +
                      "LEFT JOIN suppliers s ON po.supplier_id = s.supplier_id " +
-                     "WHERE po.purchase_date BETWEEN ? AND ? ORDER BY po.purchase_date DESC";
+                     "WHERE po.payment_status IN ('Pending', 'Partial') " +
+                     "ORDER BY po.purchase_date ASC";
         
-        List<PurchaseOrder> purchaseOrders = new ArrayList<>();
+        List<PurchaseOrder> orders = new ArrayList<>();
         
         try (Connection conn = DatabaseConnection.getConnection();
-             PreparedStatement pstmt = conn.prepareStatement(sql)) {
-            
-            pstmt.setDate(1, new java.sql.Date(startDate.getTime()));
-            pstmt.setDate(2, new java.sql.Date(endDate.getTime()));
-            ResultSet rs = pstmt.executeQuery();
+             PreparedStatement pstmt = conn.prepareStatement(sql);
+             ResultSet rs = pstmt.executeQuery()) {
             
             while (rs.next()) {
-                purchaseOrders.add(mapResultSetToPurchaseOrder(rs));
+                orders.add(mapResultSetToPurchaseOrder(rs));
             }
             
         } catch (SQLException e) {
             e.printStackTrace();
         }
-        return purchaseOrders;
+        return orders;
     }
     
     // Search purchase orders
@@ -211,7 +249,7 @@ public class PurchaseOrderDAO {
                      "WHERE (po.purchase_number LIKE ? OR s.supplier_name LIKE ? OR po.notes LIKE ?) " +
                      "ORDER BY po.purchase_date DESC";
         
-        List<PurchaseOrder> purchaseOrders = new ArrayList<>();
+        List<PurchaseOrder> orders = new ArrayList<>();
         String searchPattern = "%" + keyword + "%";
         
         try (Connection conn = DatabaseConnection.getConnection();
@@ -223,60 +261,17 @@ public class PurchaseOrderDAO {
             ResultSet rs = pstmt.executeQuery();
             
             while (rs.next()) {
-                purchaseOrders.add(mapResultSetToPurchaseOrder(rs));
+                orders.add(mapResultSetToPurchaseOrder(rs));
             }
             
         } catch (SQLException e) {
             e.printStackTrace();
         }
-        return purchaseOrders;
+        return orders;
     }
     
-    // Get outstanding purchases (not fully paid)
-    public List<PurchaseOrder> getOutstandingPurchases() {
-        String sql = "SELECT po.*, s.supplier_name FROM purchase_orders po " +
-                     "LEFT JOIN suppliers s ON po.supplier_id = s.supplier_id " +
-                     "WHERE po.payment_status IN ('Pending', 'Partial') " +
-                     "ORDER BY po.purchase_date ASC";
-        
-        List<PurchaseOrder> purchaseOrders = new ArrayList<>();
-        
-        try (Connection conn = DatabaseConnection.getConnection();
-             PreparedStatement pstmt = conn.prepareStatement(sql);
-             ResultSet rs = pstmt.executeQuery()) {
-            
-            while (rs.next()) {
-                purchaseOrders.add(mapResultSetToPurchaseOrder(rs));
-            }
-            
-        } catch (SQLException e) {
-            e.printStackTrace();
-        }
-        return purchaseOrders;
-    }
-    
-    // Get total purchase amount by supplier
-    public double getTotalPurchasesBySupplier(int supplierId) {
-        String sql = "SELECT SUM(total_amount) FROM purchase_orders WHERE supplier_id=?";
-        
-        try (Connection conn = DatabaseConnection.getConnection();
-             PreparedStatement pstmt = conn.prepareStatement(sql)) {
-            
-            pstmt.setInt(1, supplierId);
-            ResultSet rs = pstmt.executeQuery();
-            
-            if (rs.next()) {
-                return rs.getDouble(1);
-            }
-            
-        } catch (SQLException e) {
-            e.printStackTrace();
-        }
-        return 0.0;
-    }
-    
-    // Get purchase statistics
-    public Map<String, Object> getPurchaseStatistics() {
+    // Get purchase order statistics
+    public Map<String, Object> getPurchaseOrderStatistics() {
         Map<String, Object> stats = new HashMap<>();
         
         String sql = "SELECT " +
@@ -284,9 +279,9 @@ public class PurchaseOrderDAO {
                      "SUM(total_amount) as total_amount, " +
                      "SUM(paid_amount) as total_paid, " +
                      "SUM(total_amount - paid_amount) as outstanding_amount, " +
-                     "COUNT(CASE WHEN payment_status = 'Pending' THEN 1 END) as pending_orders, " +
-                     "COUNT(CASE WHEN payment_status = 'Partial' THEN 1 END) as partial_orders, " +
-                     "COUNT(CASE WHEN payment_status = 'Paid' THEN 1 END) as paid_orders " +
+                     "SUM(CASE WHEN payment_status = 'Pending' THEN 1 ELSE 0 END) as pending_orders, " +
+                     "SUM(CASE WHEN payment_status = 'Partial' THEN 1 ELSE 0 END) as partial_orders, " +
+                     "SUM(CASE WHEN payment_status = 'Paid' THEN 1 ELSE 0 END) as paid_orders " +
                      "FROM purchase_orders";
         
         try (Connection conn = DatabaseConnection.getConnection();
@@ -335,7 +330,7 @@ public class PurchaseOrderDAO {
         return purchaseOrder;
     }
     
-    // Purchase Item Operations (CORRECTED for purchase_items table)
+    // Purchase Item Operations
     public boolean insertPurchaseItems(int purchaseId, List<PurchaseItem> items) {
         String sql = "INSERT INTO purchase_items (purchase_id, product_id, quantity, unit_price, total_price) VALUES (?, ?, ?, ?, ?)";
         
@@ -347,12 +342,19 @@ public class PurchaseOrderDAO {
                 pstmt.setInt(2, item.getProductId());
                 pstmt.setDouble(3, item.getQuantity());
                 pstmt.setDouble(4, item.getUnitPrice());
-                pstmt.setDouble(5, item.getTotalPrice());
+                pstmt.setDouble(5, item.getQuantity() * item.getUnitPrice());
                 pstmt.addBatch();
             }
             
             int[] results = pstmt.executeBatch();
-            return results.length == items.size();
+            
+            // Check if all items were inserted
+            for (int result : results) {
+                if (result <= 0) {
+                    return false;
+                }
+            }
+            return true;
             
         } catch (SQLException e) {
             e.printStackTrace();
@@ -360,9 +362,9 @@ public class PurchaseOrderDAO {
         return false;
     }
     
+    // Get purchase items for a specific order
     public List<PurchaseItem> getPurchaseItems(int purchaseId) {
-        String sql = "SELECT pi.*, p.product_name, p.product_type, p.unit " +
-                     "FROM purchase_items pi " +
+        String sql = "SELECT pi.*, p.product_name FROM purchase_items pi " +
                      "LEFT JOIN products p ON pi.product_id = p.product_id " +
                      "WHERE pi.purchase_id = ?";
         
@@ -382,9 +384,14 @@ public class PurchaseOrderDAO {
                 item.setQuantity(rs.getDouble("quantity"));
                 item.setUnitPrice(rs.getDouble("unit_price"));
                 item.setTotalPrice(rs.getDouble("total_price"));
-                item.setProductName(rs.getString("product_name"));
-                item.setProductType(rs.getString("product_type"));
-                item.setUnit(rs.getString("unit"));
+                
+                // Set product name if available
+                try {
+                    item.setProductName(rs.getString("product_name"));
+                } catch (SQLException e) {
+                    // Product name not available
+                }
+                
                 items.add(item);
             }
             
@@ -394,13 +401,53 @@ public class PurchaseOrderDAO {
         return items;
     }
     
-    // Get purchase order with items (for detailed view)
-    public PurchaseOrder getPurchaseOrderWithItems(int purchaseId) {
-        PurchaseOrder purchaseOrder = findPurchaseOrderById(purchaseId);
-        if (purchaseOrder != null) {
-            List<PurchaseItem> items = getPurchaseItems(purchaseId);
-            // You can add a field to PurchaseOrder to hold items, or handle separately
+    // Delete purchase order and its items
+    public boolean deletePurchaseOrder(int purchaseId) {
+        Connection conn = null;
+        try {
+            conn = DatabaseConnection.getConnection();
+            conn.setAutoCommit(false);
+            
+            // First delete purchase items
+            String deleteItemsSql = "DELETE FROM purchase_items WHERE purchase_id = ?";
+            try (PreparedStatement pstmt1 = conn.prepareStatement(deleteItemsSql)) {
+                pstmt1.setInt(1, purchaseId);
+                pstmt1.executeUpdate();
+            }
+            
+            // Then delete purchase order
+            String deleteOrderSql = "DELETE FROM purchase_orders WHERE purchase_id = ?";
+            try (PreparedStatement pstmt2 = conn.prepareStatement(deleteOrderSql)) {
+                pstmt2.setInt(1, purchaseId);
+                int rowsAffected = pstmt2.executeUpdate();
+                
+                if (rowsAffected > 0) {
+                    conn.commit();
+                    return true;
+                }
+            }
+            
+            conn.rollback();
+            return false;
+            
+        } catch (SQLException e) {
+            if (conn != null) {
+                try {
+                    conn.rollback();
+                } catch (SQLException rollbackEx) {
+                    rollbackEx.printStackTrace();
+                }
+            }
+            e.printStackTrace();
+        } finally {
+            if (conn != null) {
+                try {
+                    conn.setAutoCommit(true);
+                } catch (SQLException e) {
+                    e.printStackTrace();
+                }
+            }
         }
-        return purchaseOrder;
+        return false;
     }
 }

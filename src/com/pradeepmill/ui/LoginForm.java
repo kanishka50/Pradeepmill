@@ -4,6 +4,7 @@ import com.pradeepmill.database.DatabaseConnection;
 import java.awt.*;
 import java.awt.event.ActionEvent;
 import javax.swing.*;
+import com.pradeepmill.utils.ConfigManager;
 
 public class LoginForm extends javax.swing.JFrame {
 
@@ -11,6 +12,7 @@ public class LoginForm extends javax.swing.JFrame {
     private JPasswordField passwordField;
     private JButton loginButton;
     private JButton cancelButton;
+    private JButton changePasswordButton;
 
     public LoginForm() {
         initComponents();
@@ -20,7 +22,7 @@ public class LoginForm extends javax.swing.JFrame {
     private void initComponents() {
         setDefaultCloseOperation(javax.swing.WindowConstants.EXIT_ON_CLOSE);
         setTitle("Login - Pradeep Rice Mill Management System");
-        setSize(400, 300);
+        setSize(500, 400);  // Increased size more to ensure all buttons fit
         setResizable(false);
         
         // Main panel with background
@@ -82,32 +84,62 @@ public class LoginForm extends javax.swing.JFrame {
         passwordField.addActionListener(this::loginButtonActionPerformed);
         loginPanel.add(passwordField, gbc);
         
-        // Buttons panel
-        JPanel buttonPanel = new JPanel(new FlowLayout());
-        buttonPanel.setBackground(new Color(240, 248, 255));
-        
+        // Create all buttons first
         loginButton = new JButton("Login");
-        loginButton.setPreferredSize(new Dimension(80, 35));
+        loginButton.setPreferredSize(new Dimension(100, 35));
         loginButton.setFont(new Font("Arial", Font.BOLD, 12));
+        loginButton.setBackground(new Color(70, 130, 180));
+        loginButton.setForeground(Color.WHITE);
         loginButton.addActionListener(this::loginButtonActionPerformed);
         
         cancelButton = new JButton("Cancel");
-        cancelButton.setPreferredSize(new Dimension(80, 35));
+        cancelButton.setPreferredSize(new Dimension(100, 35));
         cancelButton.setFont(new Font("Arial", Font.BOLD, 12));
         cancelButton.addActionListener(this::cancelButtonActionPerformed);
         
-        buttonPanel.add(loginButton);
-        buttonPanel.add(cancelButton);
+        changePasswordButton = new JButton("Change Password");
+        changePasswordButton.setPreferredSize(new Dimension(150, 35));
+        changePasswordButton.setFont(new Font("Arial", Font.BOLD, 11));
+        changePasswordButton.setBackground(new Color(34, 139, 34));
+        changePasswordButton.setForeground(Color.WHITE);
+        changePasswordButton.addActionListener(this::changePasswordActionPerformed);
+        
+        // First button panel - Login and Cancel
+        JPanel firstButtonPanel = new JPanel(new FlowLayout());
+        firstButtonPanel.setBackground(new Color(240, 248, 255));
+        firstButtonPanel.add(loginButton);
+        firstButtonPanel.add(cancelButton);
         
         gbc.gridx = 0; gbc.gridy = 2;
         gbc.gridwidth = 2;
         gbc.anchor = GridBagConstraints.CENTER;
-        loginPanel.add(buttonPanel, gbc);
+        gbc.fill = GridBagConstraints.NONE;
+        loginPanel.add(firstButtonPanel, gbc);
+        
+        // Second button panel - Change Password (on separate row)
+        JPanel secondButtonPanel = new JPanel(new FlowLayout());
+        secondButtonPanel.setBackground(new Color(240, 248, 255));
+        secondButtonPanel.add(changePasswordButton);
+        
+        gbc.gridx = 0; gbc.gridy = 3;
+        gbc.gridwidth = 2;
+        gbc.anchor = GridBagConstraints.CENTER;
+        loginPanel.add(secondButtonPanel, gbc);
         
         // Info panel
         JPanel infoPanel = new JPanel();
         infoPanel.setBackground(new Color(240, 248, 255));
-        JLabel infoLabel = new JLabel("<html><center>Default Login:<br>Username: admin<br>Password: admin123</center></html>");
+        
+        // Get current username safely
+        String currentUsername = "admin"; // default fallback
+        try {
+            currentUsername = ConfigManager.getUsername();
+        } catch (Exception e) {
+            System.out.println("ConfigManager not available yet, using default username");
+        }
+        
+        JLabel infoLabel = new JLabel("<html><center>Current Username: " + 
+            currentUsername + "<br>Click 'Change Password' to update credentials</center></html>");
         infoLabel.setFont(new Font("Arial", Font.PLAIN, 10));
         infoLabel.setForeground(Color.GRAY);
         infoPanel.add(infoLabel);
@@ -121,6 +153,9 @@ public class LoginForm extends javax.swing.JFrame {
         
         // Set focus
         usernameField.requestFocus();
+        
+        // Debug - print button count
+        System.out.println("Buttons created: Login, Cancel, Change Password");
     }
 
     private void loginButtonActionPerformed(ActionEvent evt) {
@@ -135,7 +170,16 @@ public class LoginForm extends javax.swing.JFrame {
             return;
         }
         
-        if ("admin".equals(username) && "admin123".equals(password)) {
+        // Try ConfigManager first, fallback to hardcoded if not available
+        boolean authenticated = false;
+        try {
+            authenticated = ConfigManager.authenticate(username, password);
+        } catch (Exception e) {
+            System.out.println("ConfigManager not available, using hardcoded authentication");
+            authenticated = "admin".equals(username) && "admin123".equals(password);
+        }
+        
+        if (authenticated) {
             if (DatabaseConnection.testConnection()) {
                 this.dispose();
                 new MainDashboard().setVisible(true);
@@ -163,6 +207,18 @@ public class LoginForm extends javax.swing.JFrame {
         
         if (option == JOptionPane.YES_OPTION) {
             System.exit(0);
+        }
+    }
+    
+    private void changePasswordActionPerformed(ActionEvent evt) {
+        try {
+            new ChangePasswordDialog(this).setVisible(true);
+        } catch (Exception e) {
+            JOptionPane.showMessageDialog(this,
+                "Change Password feature is not available yet.\nPlease create the ConfigManager and ChangePasswordDialog classes first.",
+                "Feature Not Available",
+                JOptionPane.INFORMATION_MESSAGE);
+            System.out.println("ChangePasswordDialog not available: " + e.getMessage());
         }
     }
 

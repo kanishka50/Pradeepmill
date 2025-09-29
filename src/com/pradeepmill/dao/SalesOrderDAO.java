@@ -68,7 +68,7 @@ public class SalesOrderDAO {
         return false;
     }
     
-    // Update payment information
+    // FIXED: Enhanced payment update for sales
     public boolean updatePayment(int saleId, double paidAmount, String paymentStatus) {
         String sql = "UPDATE sales_orders SET paid_amount=?, payment_status=?, updated_at=CURRENT_TIMESTAMP WHERE sale_id=?";
         
@@ -79,9 +79,17 @@ public class SalesOrderDAO {
             pstmt.setString(2, paymentStatus);
             pstmt.setInt(3, saleId);
             
-            return pstmt.executeUpdate() > 0;
+            int rowsUpdated = pstmt.executeUpdate();
+            if (rowsUpdated > 0) {
+                System.out.println("✅ Sales payment updated successfully for sale ID: " + saleId);
+                return true;
+            } else {
+                System.out.println("❌ No sales order found with ID: " + saleId);
+                return false;
+            }
             
         } catch (SQLException e) {
+            System.out.println("❌ Error updating sales payment: " + e.getMessage());
             e.printStackTrace();
         }
         return false;
@@ -109,59 +117,58 @@ public class SalesOrderDAO {
         return null;
     }
     
+    // NEW: Find sales order by number
+    public SalesOrder findSalesOrderByNumber(String saleNumber) {
+        String sql = "SELECT so.*, c.customer_name FROM sales_orders so " +
+                     "LEFT JOIN customers c ON so.customer_id = c.customer_id " +
+                     "WHERE so.sale_number=?";
+        
+        try (Connection conn = DatabaseConnection.getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            
+            pstmt.setString(1, saleNumber);
+            ResultSet rs = pstmt.executeQuery();
+            
+            if (rs.next()) {
+                return mapResultSetToSalesOrder(rs);
+            }
+            
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+        return null;
+    }
+    
     // Get all sales orders with customer names
     public List<SalesOrder> getAllSalesOrders() {
         String sql = "SELECT so.*, c.customer_name FROM sales_orders so " +
                      "LEFT JOIN customers c ON so.customer_id = c.customer_id " +
                      "ORDER BY so.sale_date DESC, so.sale_id DESC";
         
-        List<SalesOrder> salesOrders = new ArrayList<>();
+        List<SalesOrder> orders = new ArrayList<>();
         
         try (Connection conn = DatabaseConnection.getConnection();
              PreparedStatement pstmt = conn.prepareStatement(sql);
              ResultSet rs = pstmt.executeQuery()) {
             
             while (rs.next()) {
-                salesOrders.add(mapResultSetToSalesOrder(rs));
+                orders.add(mapResultSetToSalesOrder(rs));
             }
             
         } catch (SQLException e) {
             e.printStackTrace();
         }
-        return salesOrders;
-    }
-    
-    // Get sales orders by customer
-    public List<SalesOrder> getSalesOrdersByCustomer(int customerId) {
-        String sql = "SELECT so.*, c.customer_name FROM sales_orders so " +
-                     "LEFT JOIN customers c ON so.customer_id = c.customer_id " +
-                     "WHERE so.customer_id=? ORDER BY so.sale_date DESC";
-        
-        List<SalesOrder> salesOrders = new ArrayList<>();
-        
-        try (Connection conn = DatabaseConnection.getConnection();
-             PreparedStatement pstmt = conn.prepareStatement(sql)) {
-            
-            pstmt.setInt(1, customerId);
-            ResultSet rs = pstmt.executeQuery();
-            
-            while (rs.next()) {
-                salesOrders.add(mapResultSetToSalesOrder(rs));
-            }
-            
-        } catch (SQLException e) {
-            e.printStackTrace();
-        }
-        return salesOrders;
+        return orders;
     }
     
     // Get sales orders by payment status
     public List<SalesOrder> getSalesOrdersByPaymentStatus(String paymentStatus) {
         String sql = "SELECT so.*, c.customer_name FROM sales_orders so " +
                      "LEFT JOIN customers c ON so.customer_id = c.customer_id " +
-                     "WHERE so.payment_status=? ORDER BY so.sale_date DESC";
+                     "WHERE so.payment_status = ? " +
+                     "ORDER BY so.sale_date DESC";
         
-        List<SalesOrder> salesOrders = new ArrayList<>();
+        List<SalesOrder> orders = new ArrayList<>();
         
         try (Connection conn = DatabaseConnection.getConnection();
              PreparedStatement pstmt = conn.prepareStatement(sql)) {
@@ -170,38 +177,36 @@ public class SalesOrderDAO {
             ResultSet rs = pstmt.executeQuery();
             
             while (rs.next()) {
-                salesOrders.add(mapResultSetToSalesOrder(rs));
+                orders.add(mapResultSetToSalesOrder(rs));
             }
             
         } catch (SQLException e) {
             e.printStackTrace();
         }
-        return salesOrders;
+        return orders;
     }
     
-    // Get sales orders by date range
-    public List<SalesOrder> getSalesOrdersByDateRange(java.util.Date startDate, java.util.Date endDate) {
+    // Get outstanding sales orders
+    public List<SalesOrder> getOutstandingSales() {
         String sql = "SELECT so.*, c.customer_name FROM sales_orders so " +
                      "LEFT JOIN customers c ON so.customer_id = c.customer_id " +
-                     "WHERE so.sale_date BETWEEN ? AND ? ORDER BY so.sale_date DESC";
+                     "WHERE so.payment_status IN ('Pending', 'Partial') " +
+                     "ORDER BY so.sale_date ASC";
         
-        List<SalesOrder> salesOrders = new ArrayList<>();
+        List<SalesOrder> orders = new ArrayList<>();
         
         try (Connection conn = DatabaseConnection.getConnection();
-             PreparedStatement pstmt = conn.prepareStatement(sql)) {
-            
-            pstmt.setDate(1, new java.sql.Date(startDate.getTime()));
-            pstmt.setDate(2, new java.sql.Date(endDate.getTime()));
-            ResultSet rs = pstmt.executeQuery();
+             PreparedStatement pstmt = conn.prepareStatement(sql);
+             ResultSet rs = pstmt.executeQuery()) {
             
             while (rs.next()) {
-                salesOrders.add(mapResultSetToSalesOrder(rs));
+                orders.add(mapResultSetToSalesOrder(rs));
             }
             
         } catch (SQLException e) {
             e.printStackTrace();
         }
-        return salesOrders;
+        return orders;
     }
     
     // Search sales orders
@@ -211,7 +216,7 @@ public class SalesOrderDAO {
                      "WHERE (so.sale_number LIKE ? OR c.customer_name LIKE ? OR so.notes LIKE ?) " +
                      "ORDER BY so.sale_date DESC";
         
-        List<SalesOrder> salesOrders = new ArrayList<>();
+        List<SalesOrder> orders = new ArrayList<>();
         String searchPattern = "%" + keyword + "%";
         
         try (Connection conn = DatabaseConnection.getConnection();
@@ -223,99 +228,17 @@ public class SalesOrderDAO {
             ResultSet rs = pstmt.executeQuery();
             
             while (rs.next()) {
-                salesOrders.add(mapResultSetToSalesOrder(rs));
+                orders.add(mapResultSetToSalesOrder(rs));
             }
             
         } catch (SQLException e) {
             e.printStackTrace();
         }
-        return salesOrders;
+        return orders;
     }
     
-    // Get outstanding sales (not fully paid)
-    public List<SalesOrder> getOutstandingSales() {
-        String sql = "SELECT so.*, c.customer_name FROM sales_orders so " +
-                     "LEFT JOIN customers c ON so.customer_id = c.customer_id " +
-                     "WHERE so.payment_status IN ('Pending', 'Partial') " +
-                     "ORDER BY so.sale_date ASC";
-        
-        List<SalesOrder> salesOrders = new ArrayList<>();
-        
-        try (Connection conn = DatabaseConnection.getConnection();
-             PreparedStatement pstmt = conn.prepareStatement(sql);
-             ResultSet rs = pstmt.executeQuery()) {
-            
-            while (rs.next()) {
-                salesOrders.add(mapResultSetToSalesOrder(rs));
-            }
-            
-        } catch (SQLException e) {
-            e.printStackTrace();
-        }
-        return salesOrders;
-    }
-    
-    // Sales Item Operations
-    public boolean insertSalesItems(int saleId, List<SalesItem> items) {
-        String sql = "INSERT INTO sales_items (sale_id, product_id, quantity, unit_price, total_price) VALUES (?, ?, ?, ?, ?)";
-        
-        try (Connection conn = DatabaseConnection.getConnection();
-             PreparedStatement pstmt = conn.prepareStatement(sql)) {
-            
-            for (SalesItem item : items) {
-                pstmt.setInt(1, saleId);
-                pstmt.setInt(2, item.getProductId());
-                pstmt.setDouble(3, item.getQuantity());
-                pstmt.setDouble(4, item.getUnitPrice());
-                pstmt.setDouble(5, item.getTotalPrice());
-                pstmt.addBatch();
-            }
-            
-            int[] results = pstmt.executeBatch();
-            return results.length == items.size();
-            
-        } catch (SQLException e) {
-            e.printStackTrace();
-        }
-        return false;
-    }
-    
-    public List<SalesItem> getSalesItems(int saleId) {
-        String sql = "SELECT si.*, p.product_name, p.product_type, p.unit " +
-                     "FROM sales_items si " +
-                     "LEFT JOIN products p ON si.product_id = p.product_id " +
-                     "WHERE si.sale_id = ?";
-        
-        List<SalesItem> items = new ArrayList<>();
-        
-        try (Connection conn = DatabaseConnection.getConnection();
-             PreparedStatement pstmt = conn.prepareStatement(sql)) {
-            
-            pstmt.setInt(1, saleId);
-            ResultSet rs = pstmt.executeQuery();
-            
-            while (rs.next()) {
-                SalesItem item = new SalesItem();
-                item.setItemId(rs.getInt("item_id"));
-                item.setSaleId(rs.getInt("sale_id"));
-                item.setProductId(rs.getInt("product_id"));
-                item.setQuantity(rs.getDouble("quantity"));
-                item.setUnitPrice(rs.getDouble("unit_price"));
-                item.setTotalPrice(rs.getDouble("total_price"));
-                item.setProductName(rs.getString("product_name"));
-                item.setProductType(rs.getString("product_type"));
-                item.setUnit(rs.getString("unit"));
-                items.add(item);
-            }
-            
-        } catch (SQLException e) {
-            e.printStackTrace();
-        }
-        return items;
-    }
-    
-    // Get sales statistics
-    public Map<String, Object> getSalesStatistics() {
+    // Get sales order statistics
+    public Map<String, Object> getSalesOrderStatistics() {
         Map<String, Object> stats = new HashMap<>();
         
         String sql = "SELECT " +
@@ -323,9 +246,9 @@ public class SalesOrderDAO {
                      "SUM(total_amount) as total_amount, " +
                      "SUM(paid_amount) as total_paid, " +
                      "SUM(total_amount - paid_amount) as outstanding_amount, " +
-                     "COUNT(CASE WHEN payment_status = 'Pending' THEN 1 END) as pending_orders, " +
-                     "COUNT(CASE WHEN payment_status = 'Partial' THEN 1 END) as partial_orders, " +
-                     "COUNT(CASE WHEN payment_status = 'Paid' THEN 1 END) as paid_orders " +
+                     "SUM(CASE WHEN payment_status = 'Pending' THEN 1 ELSE 0 END) as pending_orders, " +
+                     "SUM(CASE WHEN payment_status = 'Partial' THEN 1 ELSE 0 END) as partial_orders, " +
+                     "SUM(CASE WHEN payment_status = 'Paid' THEN 1 ELSE 0 END) as paid_orders " +
                      "FROM sales_orders";
         
         try (Connection conn = DatabaseConnection.getConnection();
@@ -372,5 +295,126 @@ public class SalesOrderDAO {
         }
         
         return salesOrder;
+    }
+    
+    // Sales Item Operations
+    public boolean insertSalesItems(int saleId, List<SalesItem> items) {
+        String sql = "INSERT INTO sales_items (sale_id, product_id, quantity, unit_price, total_price) VALUES (?, ?, ?, ?, ?)";
+        
+        try (Connection conn = DatabaseConnection.getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            
+            for (SalesItem item : items) {
+                pstmt.setInt(1, saleId);
+                pstmt.setInt(2, item.getProductId());
+                pstmt.setDouble(3, item.getQuantity());
+                pstmt.setDouble(4, item.getUnitPrice());
+                pstmt.setDouble(5, item.getQuantity() * item.getUnitPrice());
+                pstmt.addBatch();
+            }
+            
+            int[] results = pstmt.executeBatch();
+            
+            // Check if all items were inserted
+            for (int result : results) {
+                if (result <= 0) {
+                    return false;
+                }
+            }
+            return true;
+            
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+        return false;
+    }
+    
+    // Get sales items for a specific order
+    public List<SalesItem> getSalesItems(int saleId) {
+        String sql = "SELECT si.*, p.product_name FROM sales_items si " +
+                     "LEFT JOIN products p ON si.product_id = p.product_id " +
+                     "WHERE si.sale_id = ?";
+        
+        List<SalesItem> items = new ArrayList<>();
+        
+        try (Connection conn = DatabaseConnection.getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            
+            pstmt.setInt(1, saleId);
+            ResultSet rs = pstmt.executeQuery();
+            
+            while (rs.next()) {
+                SalesItem item = new SalesItem();
+                item.setItemId(rs.getInt("item_id"));
+                item.setSaleId(rs.getInt("sale_id"));
+                item.setProductId(rs.getInt("product_id"));
+                item.setQuantity(rs.getDouble("quantity"));
+                item.setUnitPrice(rs.getDouble("unit_price"));
+                item.setTotalPrice(rs.getDouble("total_price"));
+                
+                // Set product name if available
+                try {
+                    item.setProductName(rs.getString("product_name"));
+                } catch (SQLException e) {
+                    // Product name not available
+                }
+                
+                items.add(item);
+            }
+            
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+        return items;
+    }
+    
+    // Delete sales order and its items
+    public boolean deleteSalesOrder(int saleId) {
+        Connection conn = null;
+        try {
+            conn = DatabaseConnection.getConnection();
+            conn.setAutoCommit(false);
+            
+            // First delete sales items
+            String deleteItemsSql = "DELETE FROM sales_items WHERE sale_id = ?";
+            try (PreparedStatement pstmt1 = conn.prepareStatement(deleteItemsSql)) {
+                pstmt1.setInt(1, saleId);
+                pstmt1.executeUpdate();
+            }
+            
+            // Then delete sales order
+            String deleteOrderSql = "DELETE FROM sales_orders WHERE sale_id = ?";
+            try (PreparedStatement pstmt2 = conn.prepareStatement(deleteOrderSql)) {
+                pstmt2.setInt(1, saleId);
+                int rowsAffected = pstmt2.executeUpdate();
+                
+                if (rowsAffected > 0) {
+                    conn.commit();
+                    return true;
+                }
+            }
+            
+            conn.rollback();
+            return false;
+            
+        } catch (SQLException e) {
+            if (conn != null) {
+                try {
+                    conn.rollback();
+                } catch (SQLException rollbackEx) {
+                    rollbackEx.printStackTrace();
+                }
+            }
+            e.printStackTrace();
+        } finally {
+            if (conn != null) {
+                try {
+                    conn.setAutoCommit(true);
+                } catch (SQLException e) {
+                    e.printStackTrace();
+                }
+            }
+        }
+        return false;
     }
 }

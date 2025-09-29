@@ -10,6 +10,7 @@ import java.awt.event.ActionEvent;
 import java.util.List;
 import java.util.ArrayList;
 import java.util.Date;
+import com.pradeepmill.services.TransactionService;
 
 
 public class AddSalesOrderDialog extends javax.swing.JDialog {
@@ -451,72 +452,49 @@ public class AddSalesOrderDialog extends javax.swing.JDialog {
     }
     
     private void saveActionPerformed(ActionEvent evt) {
-        try {
-            // Validation
-            if (customerCombo.getSelectedItem() == null) {
-                JOptionPane.showMessageDialog(this, "Please select a customer.", "Validation Error", JOptionPane.WARNING_MESSAGE);
-                return;
-            }
-            
-            if (orderItems.isEmpty()) {
-                JOptionPane.showMessageDialog(this, "Please add at least one item to the sales order.", "Validation Error", JOptionPane.WARNING_MESSAGE);
-                return;
-            }
-            
-            // Double-check stock availability before saving
-            for (SalesItem item : orderItems) {
-                if (!inventoryService.isStockSufficientForSale(item.getProductId(), item.getQuantity())) {
-                    JOptionPane.showMessageDialog(this, 
-                        "Stock has changed! Please refresh and try again.\nProduct: " + item.getProductName(), 
-                        "Stock Changed", JOptionPane.ERROR_MESSAGE);
-                    return;
-                }
-            }
-            
-            // Create sales order
-            Customer selectedCustomer = (Customer) customerCombo.getSelectedItem();
-            Date selectedDate = (Date) dateSpinner.getValue();
-            
-            SalesOrder salesOrder = new SalesOrder();
-            salesOrder.setSaleNumber(saleNumberField.getText());
-            salesOrder.setCustomerId(selectedCustomer.getCustomerId());
-            salesOrder.setSaleDate(selectedDate);
-            salesOrder.setNotes(notesField.getText());
-            salesOrder.setCreatedBy("Current User"); // Replace with actual user
-            
-            // Calculate totals
-            double totalQuantity = orderItems.stream().mapToDouble(SalesItem::getQuantity).sum();
-            double totalAmount = orderItems.stream().mapToDouble(SalesItem::getTotalPrice).sum();
-            
-            salesOrder.setTotalQuantity(totalQuantity);
-            salesOrder.setTotalAmount(totalAmount);
-            salesOrder.setPaidAmount(0.0);
-            salesOrder.setPaymentStatus(SalesOrder.PAYMENT_PENDING);
-            
-            // Save sales order
-            if (salesOrderDAO.insertSalesOrder(salesOrder)) {
-                // Save line items
-                if (salesOrderDAO.insertSalesItems(salesOrder.getSaleId(), orderItems)) {
-                    // Update stock levels (reduce stock)
-                    for (SalesItem item : orderItems) {
-                        inventoryService.updateStockAfterSales(item.getProductId(), item.getQuantity());
-                    }
-                    
-                    saved = true;
-                    JOptionPane.showMessageDialog(this, "Sales order saved successfully!\nSale Number: " + salesOrder.getSaleNumber(), "Success", JOptionPane.INFORMATION_MESSAGE);
-                    dispose();
-                } else {
-                    JOptionPane.showMessageDialog(this, "Error saving sales order items.", "Database Error", JOptionPane.ERROR_MESSAGE);
-                }
-            } else {
-                JOptionPane.showMessageDialog(this, "Error saving sales order.", "Database Error", JOptionPane.ERROR_MESSAGE);
-            }
-            
-        } catch (Exception e) {
-            e.printStackTrace();
-            JOptionPane.showMessageDialog(this, "Error saving sales order: " + e.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
+    try {
+        // Validation
+        if (supplierCombo.getSelectedItem() == null) {
+            JOptionPane.showMessageDialog(this, "Please select a supplier.", "Validation Error", JOptionPane.WARNING_MESSAGE);
+            return;
         }
+        
+        if (orderItems.isEmpty()) {
+            JOptionPane.showMessageDialog(this, "Please add at least one item to the purchase order.", "Validation Error", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+        
+        // Get selected supplier
+        Supplier selectedSupplier = (Supplier) supplierCombo.getSelectedItem();
+        
+        // FIXED: Use TransactionService for proper stock and payment integration
+        TransactionService transactionService = new TransactionService();
+        boolean transactionSuccess = transactionService.processPurchaseTransaction(
+            selectedSupplier.getSupplierId(), 
+            orderItems, 
+            notesField.getText(),
+            "Current User"
+        );
+
+        if (transactionSuccess) {
+            saved = true;
+            JOptionPane.showMessageDialog(this, 
+                "Purchase order created successfully!\n" +
+                "Purchase Number: " + purchaseNumberField.getText() + "\n" +
+                "Stock levels updated automatically.", 
+                "Success", JOptionPane.INFORMATION_MESSAGE);
+            dispose();
+        } else {
+            JOptionPane.showMessageDialog(this, 
+                "Error processing purchase transaction. Please try again.", 
+                "Transaction Error", JOptionPane.ERROR_MESSAGE);
+        }
+        
+    } catch (Exception e) {
+        e.printStackTrace();
+        JOptionPane.showMessageDialog(this, "Error creating purchase order: " + e.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
     }
+}
     
     private void cancelActionPerformed(ActionEvent evt) {
         int option = JOptionPane.showConfirmDialog(this, 

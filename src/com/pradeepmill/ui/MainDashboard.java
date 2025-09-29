@@ -193,21 +193,21 @@ public class MainDashboard extends javax.swing.JFrame {
         JPanel actionsPanel = new JPanel(new FlowLayout());
         actionsPanel.setBorder(BorderFactory.createEmptyBorder(30, 20, 30, 20));
         
-        JButton newPurchaseBtn = new JButton("New Purchase Order");
-        JButton newSalesBtn = new JButton("New Sales Order");
-        JButton viewStockBtn = new JButton("View Stock");
-        JButton generateReportBtn = new JButton("Generate Report");
+//        JButton newPurchaseBtn = new JButton("New Purchase Order");
+//        JButton newSalesBtn = new JButton("New Sales Order");
+//        JButton viewStockBtn = new JButton("View Stock");
+//        JButton generateReportBtn = new JButton("Generate Report");
         
         // Style buttons
-        newPurchaseBtn.setPreferredSize(new Dimension(150, 40));
-        newSalesBtn.setPreferredSize(new Dimension(150, 40));
-        viewStockBtn.setPreferredSize(new Dimension(150, 40));
-        generateReportBtn.setPreferredSize(new Dimension(150, 40));
-        
-        actionsPanel.add(newPurchaseBtn);
-        actionsPanel.add(newSalesBtn);
-        actionsPanel.add(viewStockBtn);
-        actionsPanel.add(generateReportBtn);
+//        newPurchaseBtn.setPreferredSize(new Dimension(150, 40));
+//        newSalesBtn.setPreferredSize(new Dimension(150, 40));
+//        viewStockBtn.setPreferredSize(new Dimension(150, 40));
+//        generateReportBtn.setPreferredSize(new Dimension(150, 40));
+//        
+//        actionsPanel.add(newPurchaseBtn);
+//        actionsPanel.add(newSalesBtn);
+//        actionsPanel.add(viewStockBtn);
+//        actionsPanel.add(generateReportBtn);
         
         // Add components to welcome panel
         welcomePanel.add(welcomeLabel, BorderLayout.NORTH);
